@@ -55,4 +55,3 @@ We extend our gratitude to the ESP8266 community for their invaluable contributi
 Picosack is developed and maintained by [Toufick Shaikh](https://github.com/Toufick190).
 
 ---
-Feel free to customize this README file according to your specific project details and requirements. Provide clear instructions on how users can get started with Picosack, contribute to the project, and seek support. Including badges (e.g., license, stars, downloads) and a table of contents can also enhance the user experience on GitHub. Happy coding!
