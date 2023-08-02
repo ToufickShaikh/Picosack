@@ -4,7 +4,7 @@
 
 ## Overview
 
-Picosack is a lightweight and portable web server designed specifically for IoT devices using the ESP8266 microcontroller. It enables developers to host web applications directly on their IoT devices, eliminating the need for external hosting services. This repository contains the source code, documentation, and examples for Picosack.
+Picosack is a lightweight and portable web server designed specifically for IoT devices using the ESP8266 microcontroller. It enables developers to host web applications directly on their IoT devices, eliminating the need for external hosting services. This repository contains the source code, documentation, and examples for Picosack.And Keep in mind That it is under devolopment .
 
 ## Features
 
