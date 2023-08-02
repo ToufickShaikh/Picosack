@@ -3,7 +3,7 @@
 #include <ESP8266WebServer.h>
 #include <FS.h>
 #include <ESP8266HTTPClient.h>
-// #include "Pico.h"                       //header file containing HTML code
+#include "Pico.h"                       //header file containing HTML code
 const char* ssid = "Picosack";
 const char* password = "12345678";
 
@@ -15,16 +15,21 @@ String publicIP;
 
 
 void handleRoot() {
-  // server.send(200, "text/html", html);  //send HTML page to web browser of client
+  server.send(200, "text/html", html);  //send HTML page to web browser of client
+ 
+}
+
+
+void handleForm() {
   String html = "<html><body>";
-  html += "<h1>ESP8266 Form Example</h1>";
+  html += "<h1>upload form to picosack</h1>";
   html += "<form method='POST' action='/submit'>";
   html += "<label for='name'>Name:</label>";
   html += "<input type='text' id='name' name='name'><br><br>";
   html += "<label for='email'>Email:</label>";
   html += "<input type='email' id='email' name='email'><br><br>";
   html += "<input type='submit' value='Submit'>";
-  html += "<h1>ESP8266 File Upload Example</h1>";
+  html += "<h1>Upload file to picosack(in future)</h1>";
   html += "<form method='POST' action='/upload' enctype='multipart/form-data'>";
   html += "<input type='file' name='file'><br><br>";
   html += "<input type='submit' value='Upload'>";
@@ -33,8 +38,6 @@ void handleRoot() {
 
   server.send(200, "text/html", html);
 }
-
-
 
 
 void handleSubmit() {
@@ -131,6 +134,66 @@ void handleDeleteData() {
   }
 }
 
+void handleStorage() {
+  fs::FSInfo fs_info;
+  if (SPIFFS.info(fs_info)) {
+    String storageStatus = "Total Bytes: " + String(fs_info.totalBytes) + "<br>";
+    storageStatus += "Used Bytes: " + String(fs_info.usedBytes) + "<br>";
+    storageStatus += "Free Bytes: " + String(fs_info.totalBytes - fs_info.usedBytes) + "<br>";
+    server.send(200, "text/html", storageStatus);
+  } else {
+    server.send(200, "text/html", "Error reading storage information!");
+  }
+}
+
+// void handleSack() {
+//   String html = "<html><body>";
+//   html += "<h1>Upload file to sack</h1>";
+//   html += "<form method='POST' action='/upload' enctype='multipart/form-data'>";
+//   html += "<input type='file' name='file'><br><br>";
+//   html += "<input type='submit' value='Upload'>";
+//   html += "</form>";
+//   html += "</body></html>";
+//   server.send(200, "text/html", html);
+// }
+
+// void handleUpload() {
+//   HTTPUpload& upload = server.upload();
+//   if (upload.status == UPLOAD_FILE_START) {
+//     String filename = "/uploads/" + upload.filename;
+//     fs::FSInfo fs_info;
+//     if (SPIFFS.info(fs_info)) {
+//       if (fs_info.totalBytes - fs_info.usedBytes < upload.totalSize) {
+//         server.send(200, "text/html", "Not enough space available to upload the file!");
+//         return;
+//       }
+//     }
+//     fs::File file = SPIFFS.open(filename, "w");
+//     if (!file) {
+//       server.send(200, "text/html", "Error opening file for writing!");
+//       return;
+//     }
+//     file.close();
+//   } else if (upload.status == UPLOAD_FILE_WRITE) {
+//     String filename = "/uploads/" + upload.filename;
+//     fs::File file = SPIFFS.open(filename, "a");
+//     if (file) {
+//       file.write(upload.buf, upload.currentSize);
+//       file.close();
+//     }
+//   } else if (upload.status == UPLOAD_FILE_END) {
+//     server.send(200, "text/html", "File uploaded successfully!");
+//   }
+// }
+
+// void handleFileList() {
+//   String fileList = "";
+//   Dir dir = SPIFFS.openDir("/uploads");
+//   while (dir.next()) {
+//     fileList += "/" + dir.fileName() + "<br>"; // Include forward slash
+//   }
+//   server.send(200, "text/html", fileList);
+// }
 void setup() {
   Serial.begin(115200);
 
@@ -153,10 +216,15 @@ void setup() {
   getPublicIP();  // Get the public IP address
 
   server.on("/", handleRoot);
+  server.on("/form", handleForm);
   server.on("/submit", handleSubmit);
+  // server.on("/sack", handleSack);
   server.on("/data", handleData);
   server.on("/viewdata", handleViewData);
   server.on("/delete", handleDeleteData);
+  server.on("/storage", handleStorage);
+  // server.on("/upload", HTTP_POST, handleUpload);
+  // server.on("/list", handleFileList);
 
 
   server.begin();
