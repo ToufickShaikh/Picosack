@@ -21,24 +21,33 @@ void handleRoot() {
 
 
 void handleForm() {
-  String html = "<html><body>";
-  html += "<h1>upload form to picosack</h1>";
-  html += "<form method='POST' action='/submit'>";
-  html += "<label for='name'>Name:</label>";
-  html += "<input type='text' id='name' name='name'><br><br>";
-  html += "<label for='email'>Email:</label>";
-  html += "<input type='email' id='email' name='email'><br><br>";
-  html += "<input type='submit' value='Submit'>";
-  html += "<h1>Upload file to picosack(in future)</h1>";
+   String html = "<html><head>";
+  // Include Tailwind CSS from CDN
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += "<link href='https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css' rel='stylesheet'>";
+  html += "</head><body class='bg-gray-100 flex flex-col items-center justify-center min-h-screen'>";
+  html += "<div class='container mx-auto bg-white rounded-lg shadow-lg p-8 sm:w-96'>";
+  html += "<h1 class='text-3xl font-bold mb-4 text-center'>PicoSack - A Portable Server</h1>";
+  html += "<p class='mb-4'>Welcome to PicoSack, a lightweight server running on an ESP8266 microcontroller. You can upload files and access them using the links below.</p>";
   html += "<form method='POST' action='/upload' enctype='multipart/form-data'>";
-  html += "<input type='file' name='file'><br><br>";
-  html += "<input type='submit' value='Upload'>";
+  html += "<input type='file' name='file' class='mb-4 w-full'><br>";
+  html += "<label class='block mb-2 font-bold' for='name'>Name:</label>";
+  html += "<input type='text' name='name' id='name' class='mb-4 w-full p-2 border rounded'>";
+  html += "<label class='block mb-2 font-bold' for='email'>Email:</label>";
+  html += "<input type='email' name='email' id='email' class='mb-4 w-full p-2 border rounded'>";
+  html += "<button type='submit' class='bg-green-500 text-white px-4 py-2 rounded w-full'>Upload</button>";
   html += "</form>";
+  html += "<h2 class='text-2xl font-bold mt-8 mb-4'>Uploaded Files</h2>";
+  html += "<ul>";
+  Dir dir = SPIFFS.openDir("/uploads");
+  while (dir.next()) {
+    html += "<li class='mb-2'><a href='/uploads/" + dir.fileName() + "' class='text-blue-500 hover:underline'>" + dir.fileName() + "</a></li>";
+  }
+  html += "</ul>";
+  html += "</div>";
   html += "</body></html>";
-
   server.send(200, "text/html", html);
 }
-
 
 void handleSubmit() {
   String name = server.arg("name");
@@ -135,15 +144,28 @@ void handleDeleteData() {
 }
 
 void handleStorage() {
+  String html = "<html><head>";
+  // Include Tailwind CSS from CDN
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += "<link href='https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css' rel='stylesheet'>";
+  html += "</head><body class='bg-gray-100 flex flex-col items-center justify-center min-h-screen'>";
+  html += "<div class='container mx-auto bg-white rounded-lg shadow-lg p-8 sm:w-96'>";
+  html += "<h2 class='text-2xl font-bold mt-8 mb-4'>Storage Information</h2>";
   fs::FSInfo fs_info;
   if (SPIFFS.info(fs_info)) {
-    String storageStatus = "Total Bytes: " + String(fs_info.totalBytes) + "<br>";
-    storageStatus += "Used Bytes: " + String(fs_info.usedBytes) + "<br>";
-    storageStatus += "Free Bytes: " + String(fs_info.totalBytes - fs_info.usedBytes) + "<br>";
-    server.send(200, "text/html", storageStatus);
+    float totalMB = fs_info.totalBytes / (1024.0 * 1024.0);
+    float usedMB = fs_info.usedBytes / (1024.0 * 1024.0);
+    float freeMB = (fs_info.totalBytes - fs_info.usedBytes) / (1024.0 * 1024.0);
+
+    html += "<p class='mb-4'>Total Storage: <span class='font-bold'>" + String(totalMB, 3) + " MB</span></p>";
+    html += "<p class='mb-4'>Used Storage: <span class='font-bold'>" + String(usedMB, 3) + " MB</span></p>";
+    html += "<p class='mb-4'>Free Storage: <span class='font-bold'>" + String(freeMB, 3) + " MB</span></p>";
   } else {
-    server.send(200, "text/html", "Error reading storage information!");
+    html += "<p class='text-red-500'>Error reading storage information!</p>";
   }
+  html += "</div>";
+  html += "</body></html>";
+  server.send(200, "text/html", html);
 }
 
 // void handleSack() {
@@ -157,34 +179,34 @@ void handleStorage() {
 //   server.send(200, "text/html", html);
 // }
 
-// void handleUpload() {
-//   HTTPUpload& upload = server.upload();
-//   if (upload.status == UPLOAD_FILE_START) {
-//     String filename = "/uploads/" + upload.filename;
-//     fs::FSInfo fs_info;
-//     if (SPIFFS.info(fs_info)) {
-//       if (fs_info.totalBytes - fs_info.usedBytes < upload.totalSize) {
-//         server.send(200, "text/html", "Not enough space available to upload the file!");
-//         return;
-//       }
-//     }
-//     fs::File file = SPIFFS.open(filename, "w");
-//     if (!file) {
-//       server.send(200, "text/html", "Error opening file for writing!");
-//       return;
-//     }
-//     file.close();
-//   } else if (upload.status == UPLOAD_FILE_WRITE) {
-//     String filename = "/uploads/" + upload.filename;
-//     fs::File file = SPIFFS.open(filename, "a");
-//     if (file) {
-//       file.write(upload.buf, upload.currentSize);
-//       file.close();
-//     }
-//   } else if (upload.status == UPLOAD_FILE_END) {
-//     server.send(200, "text/html", "File uploaded successfully!");
-//   }
-// }
+void handleUpload() {
+  HTTPUpload& upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    String filename = "/uploads/" + upload.filename;
+    fs::FSInfo fs_info;
+    if (SPIFFS.info(fs_info)) {
+      if (fs_info.totalBytes - fs_info.usedBytes < upload.totalSize) {
+        server.send(200, "text/html", "Not enough space available to upload the file!");
+        return;
+      }
+    }
+    fs::File file = SPIFFS.open(filename, "w");
+    if (!file) {
+      server.send(200, "text/html", "Error opening file for writing!");
+      return;
+    }
+    file.close();
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    String filename = "/uploads/" + upload.filename;
+    fs::File file = SPIFFS.open(filename, "a");
+    if (file) {
+      file.write(upload.buf, upload.currentSize);
+      file.close();
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    server.send(200, "text/html", "File uploaded successfully!");
+  }
+}
 
 // void handleFileList() {
 //   String fileList = "";
@@ -223,7 +245,7 @@ void setup() {
   server.on("/viewdata", handleViewData);
   server.on("/delete", handleDeleteData);
   server.on("/storage", handleStorage);
-  // server.on("/upload", HTTP_POST, handleUpload);
+  server.on("/upload", HTTP_POST, handleUpload);
   // server.on("/list", handleFileList);
 
 
