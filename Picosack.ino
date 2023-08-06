@@ -3,32 +3,57 @@
 #include <ESP8266WebServer.h>
 #include <FS.h>
 #include <ESP8266HTTPClient.h>
-#include "Pico.h"                       //header file containing HTML code
+#include <WiFiClientSecure.h>
+#include "Pico.h"  //header file containing HTML code
 const char* ssid = "Picosack";
 const char* password = "12345678";
 
 
 ESP8266WebServer server(80);
 
-String publicIP;
 
+String getPublicIP() {
+  WiFiClient client;
+  HTTPClient http;
+
+  if (!client.connect("api64.ipify.org", 80)) {
+    Serial.println("Connection failed");
+    return "";
+  }
+
+  http.begin(client, "http://api64.ipify.org");
+  int httpCode = http.GET();
+
+  String publicIP = "";
+
+  if (httpCode == HTTP_CODE_OK) {
+    publicIP = http.getString();
+  } else {
+    Serial.printf("Failed to get public IP, error code: %d\n", httpCode);
+  }
+
+  http.end();
+  return publicIP;
+}
 
 
 void handleRoot() {
   server.send(200, "text/html", html);  //send HTML page to web browser of client
- 
 }
 
+String uploadedName;
+String uploadedEmail;
+String uploadedFilename;
 
 void handleForm() {
-   String html = "<html><head>";
+  String html = "<html><head>";
   // Include Tailwind CSS from CDN
   html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
   html += "<link href='https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css' rel='stylesheet'>";
   html += "</head><body class='bg-gray-100 flex flex-col items-center justify-center min-h-screen'>";
   html += "<div class='container mx-auto bg-white rounded-lg shadow-lg p-8 sm:w-96'>";
-  html += "<h1 class='text-3xl font-bold mb-4 text-center'>PicoSack - A Portable Server</h1>";
-  html += "<p class='mb-4'>Welcome to PicoSack, a lightweight server running on an ESP8266 microcontroller. You can upload files and access them using the links below.</p>";
+  html += "<h1 class='text-3xl font-bold mb-4 text-center'>PicoSack - A Portable Web Server</h1>";
+  html += "<p class='mb-4'>Welcome to PicoSack, a lightweight web server running on an ESP8266 microcontroller. You can upload files and access them using the links below.</p>";
   html += "<form method='POST' action='/upload' enctype='multipart/form-data'>";
   html += "<input type='file' name='file' class='mb-4 w-full'><br>";
   html += "<label class='block mb-2 font-bold' for='name'>Name:</label>";
@@ -49,99 +74,86 @@ void handleForm() {
   server.send(200, "text/html", html);
 }
 
-void handleSubmit() {
-  String name = server.arg("name");
-  String email = server.arg("email");
 
-  String message = "Name: " + name + ", Email: " + email;
-  message += "<br>Public IP: " + publicIP;
+void handleUpload() {
+  if (server.uri() != "/upload")
+    return;
 
-  Serial.println(message);
+  HTTPUpload& upload = server.upload();
+  uploadedName = "";
+  uploadedEmail = "";
+  uploadedFilename = "";
 
-  // Save the data to a file
-  File dataFile = SPIFFS.open("/formdata.txt", "a");
-  if (dataFile) {
-    dataFile.println(message);
-    dataFile.close();
-    Serial.println("Data saved to file");
-  } else {
-    Serial.println("Error opening data file");
+  // Get the name and email from the form fields
+  for (uint8_t i = 0; i < server.args(); i++) {
+    if (server.argName(i) == "name") {
+      uploadedName = server.arg(i);
+    } else if (server.argName(i) == "email") {
+      uploadedEmail = server.arg(i);
+    }
   }
 
-  server.send(200, "text/html", "Form submitted successfully!");
+  // Handle the file upload
+  if (upload.status == UPLOAD_FILE_START) {
+    uploadedFilename = upload.filename;
+    String filename = "/uploads/" + uploadedFilename;
+    fs::File file = SPIFFS.open(filename, "w");
+    if (!file) {
+      Serial.println("Error opening file for writing");
+      return;
+    }
+    Serial.print("Uploading file: ");
+    Serial.println(filename);
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    String filename = "/uploads/" + uploadedFilename;
+    fs::File file = SPIFFS.open(filename, "a");
+    if (file) {
+      file.write(upload.buf, upload.currentSize);
+      file.close();
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    Serial.println("File upload finished successfully!");
+
+    // Save the data to the CSV file
+    String dataLine = uploadedName + "," + uploadedEmail + "," + uploadedFilename + "," + getPublicIP() + "\n";
+    fs::File dataFile = SPIFFS.open("/data.csv", "a");
+    if (dataFile) {
+      dataFile.print(dataLine);
+      dataFile.close();
+    }
+    // Send a success message to the client
+    String html = "<html><head>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<link href='https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css' rel='stylesheet'>";
+    html += "</head><body class='bg-gray-100 flex flex-col items-center justify-center min-h-screen'>";
+    html += "<div class='container mx-auto bg-white rounded-lg shadow-lg p-8 sm:w-96'>";
+    html += "<h1 class='text-3xl font-bold mb-4 text-center'>PicoSack - Upload File</h1>";
+    html += "<p class='mb-4'>Form submitted successfully!</p>";
+    html += "<a href='/'>Back to Home</a>";
+    html += "</div>";
+    html += "</body></html>";
+    server.send(200, "text/html", html);
+  }
 }
+
 
 void handleData() {
-  String data;
-
-  // Read the data file
-  File dataFile = SPIFFS.open("/formdata.txt", "r");
-  if (dataFile) {
-    while (dataFile.available()) {
-      String line = dataFile.readStringUntil('\n');
-      data += line + "<br>";
-    }
-    dataFile.close();
-    Serial.println("Data file read");
-  } else {
-    Serial.println("Error opening data file");
-  }
-
-  String html = "<html><body>";
-  html += "<h1>Submitted Form Data</h1>";
-  html += data;
+  String html = "<html><head>";
+  // Include Tailwind CSS from CDN
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += "<link href='https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css' rel='stylesheet'>";
+  html += "</head><body class='bg-gray-100 flex flex-col items-center justify-center min-h-screen'>";
+  html += "<div class='container mx-auto bg-white rounded-lg shadow-lg p-8 sm:w-96'>";
+  html += "<h1 class='text-3xl font-bold mb-4 text-center'>PicoSack - Handle Data</h1>";
+  html += "<p class='mb-4'>Name: " + uploadedName + "</p>";
+  html += "<p class='mb-4'>Email: " + uploadedEmail + "</p>";
+  html += "<p class='mb-4'>Uploaded File: " + uploadedFilename + "</p>";
+  html += "<a href='/'>Back to Home</a>";
+  html += "</div>";
   html += "</body></html>";
-
   server.send(200, "text/html", html);
 }
 
-void handleViewData() {
-  String data;
-
-  // Read the data file
-  File dataFile = SPIFFS.open("/formdata.txt", "r");
-  if (dataFile) {
-    while (dataFile.available()) {
-      data += dataFile.readStringUntil('\n');
-    }
-    dataFile.close();
-    Serial.println("Data file read");
-  } else {
-    Serial.println("Error opening data file");
-  }
-
-  String html = "<html><body>";
-  html += "<h1>Saved Form Data</h1>";
-  html += "<pre>" + data + "</pre>";
-  html += "</body></html>";
-
-  server.send(200, "text/html", html);
-}
-
-void getPublicIP() {
-  if (WiFi.status() == WL_CONNECTED) {
-    WiFiClient client;
-    HTTPClient http;
-    http.begin(client, "http://api.ipify.org");
-    int httpCode = http.GET();
-    if (httpCode == HTTP_CODE_OK) {
-      publicIP = http.getString();
-      Serial.print("Public IP: ");
-      Serial.println(publicIP);
-    }
-    http.end();
-  }
-}
-
-void handleDeleteData() {
-  if (SPIFFS.remove("/formdata.txt")) {
-    Serial.println("Data file deleted");
-    server.send(200, "text/html", "Data deleted successfully!");
-  } else {
-    Serial.println("Error deleting data file");
-    server.send(200, "text/html", "Error deleting data!");
-  }
-}
 
 void handleStorage() {
   String html = "<html><head>";
@@ -168,54 +180,101 @@ void handleStorage() {
   server.send(200, "text/html", html);
 }
 
-// void handleSack() {
-//   String html = "<html><body>";
-//   html += "<h1>Upload file to sack</h1>";
-//   html += "<form method='POST' action='/upload' enctype='multipart/form-data'>";
-//   html += "<input type='file' name='file'><br><br>";
-//   html += "<input type='submit' value='Upload'>";
-//   html += "</form>";
-//   html += "</body></html>";
-//   server.send(200, "text/html", html);
-// }
 
-void handleUpload() {
-  HTTPUpload& upload = server.upload();
-  if (upload.status == UPLOAD_FILE_START) {
-    String filename = "/uploads/" + upload.filename;
-    fs::FSInfo fs_info;
-    if (SPIFFS.info(fs_info)) {
-      if (fs_info.totalBytes - fs_info.usedBytes < upload.totalSize) {
-        server.send(200, "text/html", "Not enough space available to upload the file!");
-        return;
+
+void handleViewData() {
+  String html = "<!DOCTYPE html><html><head><title>PicoSack - Uploaded Data</title>";
+  html += "<link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css'>";
+  html += "</head><body class='bg-gray-100'>";
+
+  // Navigation bar
+  html += "<nav class='bg-blue-600 py-3 text-white'><div class='container mx-auto px-4'>";
+  html += "<span class='text-xl font-bold'>PicoSack</span>";
+  html += "<a href='/' class='float-right'>Home</a>";
+  html += "</div></nav>";
+
+  // Data table
+  html += "<div class='container mx-auto mt-6 px-4'>";
+  html += "<h2 class='text-2xl font-bold mb-4'>Uploaded Data</h2>";
+  html += "<div class='overflow-x-auto'>";
+  html += "<table class='table-auto border-collapse border w-full'>";
+  html += "<thead><tr><th class='border px-4 py-2 bg-blue-100'>Name</th>";
+  html += "<th class='border px-4 py-2 bg-blue-100'>Email</th>";
+  html += "<th class='border px-4 py-2 bg-blue-100'>Filename</th>";
+  html += "<th class='border px-4 py-2 bg-blue-100'>Public IP</th></tr></thead><tbody>";
+
+  fs::File dataFile = SPIFFS.open("/data.csv", "r");
+  if (dataFile) {
+    while (dataFile.available()) {
+      String line = dataFile.readStringUntil('\n');
+      html += "<tr>";
+      int index = 0;
+      while (index < line.length()) {
+        int nextIndex = line.indexOf(",", index);
+        if (nextIndex == -1)
+          nextIndex = line.length();
+        String cellValue = line.substring(index, nextIndex);
+        html += "<td class='border px-4 py-2'>" + cellValue + "</td>";
+        index = nextIndex + 1;
       }
+      html += "</tr>";
     }
-    fs::File file = SPIFFS.open(filename, "w");
-    if (!file) {
-      server.send(200, "text/html", "Error opening file for writing!");
-      return;
+    dataFile.close();
+  } else {
+    html += "<tr><td class='border px-4 py-2' colspan='4'>Data file not found or unable to open.</td></tr>";
+  }
+
+  html += "</tbody></table></div></div></body></html>";
+  server.send(200, "text/html", html);
+}
+
+
+void handleDeleteData() {
+  if (server.method() == HTTP_POST) {
+    // Delete data.csv
+    if (SPIFFS.exists("/data.csv")) {
+      SPIFFS.remove("/data.csv");
+      Serial.println("data.csv deleted");
     }
-    file.close();
-  } else if (upload.status == UPLOAD_FILE_WRITE) {
-    String filename = "/uploads/" + upload.filename;
-    fs::File file = SPIFFS.open(filename, "a");
-    if (file) {
-      file.write(upload.buf, upload.currentSize);
-      file.close();
+
+    // Delete uploaded files
+    Dir dir = SPIFFS.openDir("/uploads");
+    while (dir.next()) {
+      SPIFFS.remove(dir.fileName());
+      Serial.println("Deleted: " + dir.fileName());
     }
-  } else if (upload.status == UPLOAD_FILE_END) {
-    server.send(200, "text/html", "File uploaded successfully!");
+
+    // Re-create the data.csv file
+    fs::File dataFile = SPIFFS.open("/data.csv", "w");
+    if (dataFile) {
+      dataFile.println("Name,Email,Filename,Public IP");
+      dataFile.close();
+    }
+
+    server.send(200, "text/html", "Data deleted successfully.<br><a href='/'>Back to Home</a>");
+  } else {
+    String html = "<html><head>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<link href='https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css' rel='stylesheet'>";
+    html += "</head><body class='bg-gray-100 flex flex-col items-center justify-center min-h-screen'>";
+    html += "<div class='container mx-auto bg-white rounded-lg shadow-lg p-8 sm:w-96'>";
+    html += "<h2 class='text-2xl font-bold mt-8 mb-4'>Delete Data</h2>";
+    html += "<p class='mb-4'>Are you sure you want to delete all stored data?</p>";
+    html += "<form method='POST' action='/deletedata'>";
+    html += "<button type='submit' class='bg-red-500 text-white px-4 py-2 rounded'>Delete Data</button>";
+    html += "</form>";
+    html += "<a href='/'>Back to Home</a>";
+    html += "</div>";
+    html += "</body></html>";
+    server.send(200, "text/html", html);
   }
 }
 
-// void handleFileList() {
-//   String fileList = "";
-//   Dir dir = SPIFFS.openDir("/uploads");
-//   while (dir.next()) {
-//     fileList += "/" + dir.fileName() + "<br>"; // Include forward slash
-//   }
-//   server.send(200, "text/html", fileList);
-// }
+
+
+
+
+
 void setup() {
   Serial.begin(115200);
 
@@ -235,23 +294,34 @@ void setup() {
   }
   Serial.println("SPIFFS initialized");
 
-  getPublicIP();  // Get the public IP address
+  // Create the "uploads" directory if it doesn't exist
+  if (!SPIFFS.exists("/uploads")) {
+    SPIFFS.mkdir("/uploads");
+  }
+
+  // Create the "data.csv" file if it doesn't exist
+  if (!SPIFFS.exists("/data.csv")) {
+    fs::File dataFile = SPIFFS.open("/data.csv", "w");
+    if (dataFile) {
+      dataFile.println("Name,Email,Filename,Public IP");
+      dataFile.close();
+    }
+  }
 
   server.on("/", handleRoot);
   server.on("/form", handleForm);
-  server.on("/submit", handleSubmit);
-  // server.on("/sack", handleSack);
   server.on("/data", handleData);
   server.on("/viewdata", handleViewData);
-  server.on("/delete", handleDeleteData);
   server.on("/storage", handleStorage);
   server.on("/upload", HTTP_POST, handleUpload);
-  // server.on("/list", handleFileList);
+  server.on("/deletedata", HTTP_GET, handleDeleteData);
+  server.on("/deletedata", HTTP_POST, handleDeleteData);
 
 
   server.begin();
   Serial.println("Server started");
 }
+
 
 
 
